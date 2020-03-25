@@ -1,0 +1,108 @@
+bool toggle = false;
+bool momentary = false;
+bool CW = true;
+bool CCW = false;
+uint8_t OCR0A_val = 156;  // Use OCR0A to trim the PWM frequency to 50Hz
+uint8_t home_val = 140; // Use OCR0B to vary the duty cycle. 136 <-> 145 <-> 153  CCW <-> Center <-> CW
+uint8_t stop_val = 147; // Max CW position
+
+void setup()
+{  
+  PRR = (1<<PRTIM1) | (1<<PRUSI) | (1<<PRADC);  // Turn off unncessary peripherals to save power
+  
+  DDRB = (1<<DDB1) | (0<<DDB2) | (0<<DDB4); // Set OC0B (PB1) phys. pin 6 as an OUTPUT, INT0 (PB2) phys. pin 7, and PB4 phys.pin3 as input
+  PORTB = (1<<PB2) | (1<<PB4); // Enable internal pull-up on PB2 (INT0) and PB4
+
+  GIMSK = (1<<INT0) | (1<<PCIE);  // Enable external interrupt request 0 and pin change interrupt
+  PCMSK = (1<<PCINT4);  // Enable pin change interrupt on PB4 
+  MCUCR = (1<<ISC01);  // Falling edge of INT0 generates interrupt request
+
+  WDTCR = (1<<WDIE) | (1<<WDP1) | (1<<WDP2) | (1<<WDP0); // Enable Watch Dog Interrupt and set for 2 second time-out
+  
+  // Configure PWM generator. See section 15.9, Pg. 104
+  TCCR0A = (1<<COM0B1) | (1<<COM0B0) | (1<<WGM00);  // See table 15-4, Pg. 105. Enable PWM, Phase Correct (Mode 1)
+  TCCR0B = (1<<WGM02) | (1<<CS02) | (1<<CS00);
+  byte sreg = SREG;  // Save current state of the STATUS Register. 
+  cli();  // Disable interrupts
+  OCR0A = OCR0A_val;
+  OCR0B = home_val;
+  SREG = sreg;  // Restore previous state of SREG.
+  sei();  // Re-enable interrupts
+}
+
+void loop() 
+{
+  if (momentary)
+  {
+    writeOCR0B_val(stop_val);
+    while (!bitRead(PINB,2)) 
+    {
+      // Hang out here until the button (relay) is released
+    }
+    writeOCR0B_val(home_val);  // Go back to resting position
+    momentary = false;
+  }
+  
+  if (toggle)
+  {
+    if (CW)
+    {
+      writeOCR0B_val(stop_val);
+      
+      CW = false;
+      CCW = true;
+    }
+    else if (CCW)
+    {
+      writeOCR0B_val(home_val);
+      
+      CCW = false;
+      CW = true;
+    }
+    
+    toggle = false;
+  }
+  wdt_reset();
+}
+
+ISR(INT0_vect)
+{
+  cli();
+  
+  if (bitRead(PINB, 4)) // If jumper is removed, pin is pulled HIGH into momentary mode
+    momentary = true;
+  else                  // If jumper is set, pin is pulled LOW into toggle mode
+    toggle = true;
+  
+  sei();
+}
+
+ISR(PCINT0_vect)
+{
+  if (bitRead(PINB, 4)) // When the user switches from toggle to momentary, automatically move back to rest position if left at active position
+  {
+    writeOCR0B_val(home_val);
+    CW = true;
+  }
+}
+
+ISR(WDT_vect)
+{
+  writeOCR0B_val(home_val);
+}
+
+void writeOCR0B_val(uint8_t v)
+{
+  byte sreg = SREG;  // Save current state of the STATUS Register. 
+  cli();  // Disable interrupts
+  OCR0B = v;
+  SREG = sreg;  // Restore previous state of SREG.
+  sei();  // Re-enable interrupts
+}
+
+void wdt_reset(void)
+{
+  asm (
+    "wdr \n"
+    );
+}

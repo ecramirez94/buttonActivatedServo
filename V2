@@ -3,8 +3,8 @@ bool momentary = false;
 bool CW = true;
 bool CCW = false;
 uint8_t OCR0A_val = 156;  // Use OCR0A to trim the PWM frequency to 50Hz
-uint8_t home_val = 140; // Use OCR0B to vary the duty cycle. 136 <-> 145 <-> 153  CCW <-> Center <-> CW
-uint8_t stop_val = 147; // Max CW position
+uint8_t homePosition = 140; // Use OCR0B to vary the duty cycle. 136 <-> 145 <-> 153  CCW <-> Center <-> CW
+uint8_t stopPosition = 147; // Max CW position
 
 void setup()
 {  
@@ -25,7 +25,7 @@ void setup()
   byte sreg = SREG;  // Save current state of the STATUS Register. 
   cli();  // Disable interrupts
   OCR0A = OCR0A_val;
-  OCR0B = home_val;
+  OCR0B = homePosition;
   SREG = sreg;  // Restore previous state of SREG.
   sei();  // Re-enable interrupts
 }
@@ -34,12 +34,12 @@ void loop()
 {
   if (momentary)
   {
-    writeOCR0B_val(stop_val);
+    writeOCR0B_val(stopPosition);
     while (!bitRead(PINB,2)) 
     {
       // Hang out here until the button (relay) is released
     }
-    writeOCR0B_val(home_val);  // Go back to resting position
+    writeOCR0B_val(homePosition);  // Go back to resting position
     momentary = false;
   }
   
@@ -47,14 +47,14 @@ void loop()
   {
     if (CW)
     {
-      writeOCR0B_val(stop_val);
+      writeOCR0B_val(stopPosition);
       
       CW = false;
       CCW = true;
     }
     else if (CCW)
     {
-      writeOCR0B_val(home_val);
+      writeOCR0B_val(homePosition);
       
       CCW = false;
       CW = true;
@@ -81,14 +81,14 @@ ISR(PCINT0_vect)
 {
   if (bitRead(PINB, 4)) // When the user switches from toggle to momentary, automatically move back to rest position if left at active position
   {
-    writeOCR0B_val(home_val);
+    writeOCR0B_val(homePosition);
     CW = true;
   }
 }
 
 ISR(WDT_vect)
 {
-  writeOCR0B_val(home_val);
+  writeOCR0B_val(homePosition);
 }
 
 void writeOCR0B_val(uint8_t v)
